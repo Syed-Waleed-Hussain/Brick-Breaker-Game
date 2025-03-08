@@ -1,0 +1,640 @@
+INCLUDE Irvine32.inc
+INCLUDE macros.inc
+MaxSize = 50000               ;it is the size of string array[used for storing bricks]
+.data
+
+;--------------------------BRICKS VARIABLES------------------------------------
+Brick Byte MaxSize dup(0)     ;String which will hold bricks
+NumBricks DWORD 0             ;Store the count of total Bricks
+BrickRows DWORD 6             ;Holds the total no Bricks Rows
+;------------------------------------------------------------------------------
+
+;--------------------------SCREEN DIMENSIONS-----------------------------------
+DimRow SBYTE ?                ;Store the dimensions of Rows ------>[HEIGHT]
+DimCol SBYTE ?                ;Store the dimensions of Cols ------>[WIDTH]
+;------------------------------------------------------------------------------
+
+;--------------------------SLIDER VARIABLES------------------------------------
+Slider Byte 16 dup(0)         ;Paddle String
+X_axis_Slider SByte ?         ;X-axis position of Slider on the screen
+Y_axis_Slider SByte ?         ;Y-axis position of Slider on the screen
+;------------------------------------------------------------------------------
+
+;---------------------------BALL VARIABLES-------------------------------------
+X_axis_Ball SByte ?           ;X-axis position of the Ball
+Y_axis_Ball SByte ?           ;Y-axis position of the Ball
+Acc_X_axis SBYTE -1           ;Acceleration in the x-axis
+Acc_Y_axis SBYTE  3           ;Acceleration in the y-axis
+;------------------------------------------------------------------------------
+
+;---------------------------MENU VARIABLES-------------------------------------
+prompt0 byte "                                             ",0
+prompt1 byte "        WELCOME TO BRICK BREAKER GAME        ",0
+prompt2 byte "                                             ",0
+prompt3 byte "             -REGISTER YOURSELF-             ",0
+prompt4 byte "Enter your name -> ",0
+BUFFER EQU 100
+UserName BYTE BUFFER DUP(?)
+NameLength DWORD ?
+SCORE byte "0",0
+;------------------------------------------------------------------------------
+
+;----------------------------EXIT VARIABLES------------------------------------
+msg1 byte "                                         ",0
+msg2 byte "                GAME OVER                ",0
+msg3 byte "Name  : ",0
+msg4 byte "Score : ",0
+;------------------------------------------------------------------------------
+
+;-----------------------------FILE HANDLING------------------------------------
+fileName byte "Scores.txt"
+Handler Handle ?
+newline byte 0Ah  ; Newline character
+emptySpace byte "  ",0
+;------------------------------------------------------------------------------
+
+
+.code
+;-------CHECK SLIDER COLLISION------------
+    Check_Slider_Is_Here PROC
+    movzx eax,X_axis_Ball           
+    movzx ebx,X_axis_Slider
+    cmp eax,ebx                 ;will check that if ball & slider is on the same height, means colliding
+    
+    JNZ Return
+    movzx eax,Y_axis_Ball       ;if on same level than check if thier y-axis, means horizontal position is also on the same level or not
+    movzx ebx,Y_axis_Slider
+    cmp eax,ebx
+    JL Exitt                    ;if not on same level then game over
+    sub eax,ebx
+    cmp eax,16
+    JGE Exitt
+    neg Acc_X_axis
+    mov eax,7
+    call RandomRange             ;calling randon range to change direction
+    movsx ebx,Acc_Y_axis
+    cmp ebx,0
+    JL First
+    mov Acc_Y_axis,al
+    ret
+    First:
+    mov Acc_Y_axis,al
+    neg Acc_Y_axis
+    Return:
+    ret
+    Exitt:
+    call ENDUI
+    exit
+Check_Slider_Is_Here ENDP
+;---------------------------------
+
+;---CHECK BRICK COLLISION PROC---- 
+Check_String_Is_Here PROC
+
+    mov dh,X_axis_Ball      
+    MOV dl,Y_axis_Ball
+    call gotoxy         
+    
+    ;checking if on the ball's location exist a brick
+    mov esi,eax
+    mov al,Brick[eax]
+    cmp al,0DBh
+    JNZ Return          ;if not then ret
+    inc SCORE           ;else increase score
+    mov ecx,10          ;removing the brick mechanism
+    L1:
+    dec esi
+    mov al,Brick[esi]
+    cmp al,0DBh
+    JNZ BreakBricks         ;basically finding the offset of that brick
+
+    dec dl;
+    Loop L1
+    BreakBricks:
+    dec dh                  ;decreasing height of the ball, like it breaks & reflects from the brick 
+    call gotoxy
+    inc esi
+    mov ecx,10
+    L2:
+    mwrite" "
+    mov Brick[esi],' '
+    inc esi
+    mov al,Brick[esi]
+    cmp al,0DBh
+    JNZ ENDD
+    loop L2
+    ENDD:
+    neg Acc_X_axis
+    call Check_Ball_Current
+    Return:
+    ret
+Check_String_Is_Here ENDP
+;------------------------------------
+
+;----------Check BALL PROC-----------
+Check_Ball_Current PROC
+    call Color
+    mov dh,X_axis_Ball
+    mov dl,Y_axis_Ball
+    call gotoxy     
+
+    add dh,Acc_X_axis               ;will change ball's Y position
+    mov bl,dh
+    cmp bl,0                        ;if x-axis acceleration is 0, then will set its acceleration
+    JNZ  check_Y    
+
+    neg Acc_X_axis
+
+    check_Y:                                                    ; x-axis of Ball not equal to zero
+    mov X_axis_Ball,bl
+    movzx ebx,dl
+    movsx eax,Acc_Y_axis
+    add ebx,eax
+    cmp ebx,0
+    JNLE  Aon                                                   ;check Y not greater than colum Number
+    mov Y_axis_Ball,0
+    neg Acc_Y_axis
+    jmp Return
+
+    Aon:
+    movzx eax,DimCol
+    cmp ebx,eax
+    JBE Continue                                               ;Continue to move more checking
+    neg Acc_Y_axis
+    movzx ebx,DimCol
+    dec bl
+    Continue:
+    mov Y_axis_Ball,bl
+    Return:
+    mwrite" "
+    ret
+Check_Ball_Current ENDP
+;------------------------------------------
+
+;-----------BALL MOVE PROCEDURE------------
+Ball_MOVE  PROC
+    call Check_Ball_Current          
+    ;Converting 2d location to 1d location, basically finding the index on which ball lies 
+    movzx eax,X_axis_Ball
+    dec eax
+    movzx ebx,DimCol
+    mul ebx
+    movzx ebx,Y_axis_Ball
+    add eax,ebx                                       ;location of the ball
+    call Check_String_Is_Here                         ;if brick is on the new balls position then tihis proc will reverse balls X-acc & remove that block
+    call Check_Slider_Is_Here                         ;if slider on the balls new posi then reverse ball Y-acc
+    mov dh,X_axis_Ball 
+    MOV dl,Y_axis_Ball
+    call gotoxy
+    mov edx,0
+
+    mov al,'0'                                        ;can use o but that character is causing game to lag
+    call writechar
+    ret
+Ball_MOVE ENDP
+;-----------------------------------------
+
+;-----------MOVE SLIDER LEFT PROC---------
+Slider_Move_Left PROC
+    cmp Y_axis_Slider,0                     ;check if slider is out of boundary, [width]
+    JLE Return
+
+  
+    movzx eax,Y_axis_Slider     
+
+    sub eax,8                               ;moving 8 positions to the left
+    cmp eax,0                               ;checking if it exceeds width limit, then will set it aside to the corner.
+    JGE Sub8                                ;if not then directly remove, previous location and print new
+
+    mov Y_axis_Slider,0 
+
+    mov dh,X_axis_Slider
+    mov dl,Y_axis_Slider
+    call gotoxy
+    mov al,0DBh
+    mov ecx,16
+    L1:
+    call writechar
+    Loop L1
+    mov ecx,16
+    LL:
+    mwrite" "
+    loop LL
+    ret
+
+    Sub8:
+    sub Y_axis_Slider,8
+    mov dh,X_axis_Slider
+    mov dl,Y_axis_Slider
+    call Gotoxy
+    mov ecx,LENGTHOF Slider
+    mov al,0DBh
+    
+    L3:
+    call writechar              ;will print new slocation
+    Loop L3
+    mov ecx,8
+    space:
+    mwrite" "                   ;will remove the previous position
+    loop space
+    Return:
+    ret
+Slider_Move_Left ENDP
+;-----------------------------------------
+
+
+;---------MOVE SLIDER RIGHT PROC----------
+Slider_Move_Right PROC
+    movzx eax,DimCol            ;same logic as move left
+    sub eax,16
+    cmp al,Y_axis_Slider
+    JE Return
+    call color
+    mov dh,X_axis_Slider
+    mov dl,Y_axis_Slider
+    call Gotoxy
+
+    movzx eax,Y_axis_Slider
+    movzx ebx,DimCol
+    add eax,16
+    sub ebx,eax
+
+    cmp ebx,8
+
+    JGE Add8
+    mov ecx,ebx
+    L1:
+    mwrite" "
+    loop L1
+    add Y_axis_Slider,bl
+    mov ecx,LENGTHOF Slider
+    mov al,0DBh
+    L4:
+    call writechar
+    loop L4
+    ret
+
+    Add8:
+    mov ecx,8
+    L2:
+    mwrite" "
+    Loop L2
+    mov ecx,LENGTHOF Slider
+    mov al,0DBh
+    L3:
+    call writechar
+    Loop L3
+    add Y_axis_Slider,8
+    Return:
+    ret
+Slider_Move_Right ENDP
+;-----------------------------------------
+
+;---------DRAW BALL PROCEDURE-------------
+Draw_Ball Proc
+    mov dh,X_axis_Slider           ;Setting the ball position on the center of the paddle
+    mov dl,Y_axis_Slider
+    add dl,7
+    dec dh
+    mov X_axis_Ball,dh
+    mov Y_axis_Ball,dl
+    call Gotoxy
+    mov al,'O'
+    call writechar
+    ret
+Draw_Ball EndP
+;-----------------------------------------------
+
+;-------------DRAW SLIDER PROCEDURE--------------
+Draw_Slider PROC
+    mov eax,0
+    mov edi,OFFSET Slider           ;storing the offset of slider to fill the slider string with square boxes
+    mov al,DimRow                   ;storing the height dimension
+    mov  X_axis_Slider,al                        
+    sub  X_axis_Slider,10           ;setting height of slider to the 5spaces upward from the bottom of console
+
+    mov al,DimCol                   ;storing the width dimension to set slider at the center of the screen
+    mov bl,2
+    div bl
+
+    sub al,8
+    mov Y_axis_Slider,al
+    mov dh,X_axis_Slider
+    mov dl,al
+    call Gotoxy                     ;Using this function we are setting cursor position to the center, to print the slider
+    mov al,0DBH
+    mov ecx,16                      ;16bytes is the size of paddle, basically length
+    L1:
+    mov [edi],al                    ;also storing the small blocks in the slider string
+    inc edi
+    call writechar                  ;printing one by one small 16 blocks to form one slider
+    loop L1
+    ret
+Draw_Slider ENDP
+;---------------------------------------
+
+
+;------------RGB COLOR PROC-------------
+Color Proc
+    mov eax,0fh
+    call RandomRange
+    add eax,1
+    call SetTextColor
+    ret
+Color ENDP
+;----------------------------------------
+
+;----------BRICK MAKER PROCEDURE---------
+Bricks_Maker PROC
+Local Row_equal:DWORD     ;local variables to hold the current row and col to track the brick generation
+Local Col_equal:DWORD
+
+    mov Row_equal,0
+    mov Col_equal,0
+
+    mov eax,0
+    mov edx,0
+    call GetMaxxy         ;Function to get screen Dimensions [ah->Height X dl->Width]
+    mov DimRow,ah
+    mov DimCol,dl
+        
+    mov eax,edx           ;Storing Screen Width in eax register & multiplying with total Rows to get the numof bricks that can be placed
+    mov ebx,BrickRows
+    mul ebx
+    mov NumBricks,eax
+
+    mov ecx,BrickRows     ;Outerloop to traverse row by row to fill the screen with bricks
+    movzx ebx,DimCol      ;Storing Screen Width in ebx
+
+    mov esi,0             ;Using esi as indexed addresing to store the bricks one by one in BLockString.
+
+    L1:                   ;will repeat until whole rows are not filled
+    
+    L2:                   ;will repeat until whole columns of one row are not filled
+       call Color
+       mov al,0DBh
+       mov ecx,10         ;10 small blocks will combine to make one brick
+          L3:
+                 call writechar
+                 inc Col_equal
+                 mov Brick[esi],al          ;storing in Brick string
+                 inc esi
+                 cmp ebx,Col_equal             
+                 JZ R                       ;One Row is completed
+                 Loop L3
+
+                 mov ecx,2              
+                 mov al,32                  ;Placing 2 empty spaces between all the brick
+
+                 L4:
+                  call writechar
+                  inc Col_equal
+                  mov Brick[esi],al
+                  inc esi
+                  cmp ebx,Col_equal             
+                  JZ R                      
+                  loop L4
+
+                
+             loop L2
+    R:
+
+    mov eax,BrickRows
+    inc Row_equal 
+    cmp Row_equal,eax
+    Jz Return           ;if all rows are filled then return from the procedure
+
+    ;fill the remainig places with empty space
+    movzx ecx,DimCol
+    mov al,32
+    L5:
+    mov Brick[esi],al
+    inc esi
+    call writechar
+    Loop L5
+    mov eax,BrickRows
+    inc Row_equal 
+    cmp Row_equal,eax
+    Jz Return
+    mov Col_equal,0
+    loop L1
+    Return:
+    ret
+
+Bricks_Maker ENDP
+;----------------------------------
+
+
+;----START USER INTERFACE PROC-----
+printSTART PROC
+
+    mov eax,1fh
+    call SetTextColor           ;sets background color to blue
+
+    mov dl,38                   ;setting cursor position 
+    mov dh,1
+    call gotoxy
+
+    mov al,0dbh
+    call writechar
+    mov edx,OFFSET prompt0      ;Printing the message[empty space]
+    call writestring
+    mov NameLength,eax
+    call writechar
+    call crlf
+
+
+    mov dl,38
+    mov dh,2
+    call gotoxy
+    mov al,0dbh
+    call writechar
+    mov edx,OFFSET prompt1       ;Printing the message[WELCOME]
+    call writestring
+    mov al,0dbh
+    call writechar
+    call crlf
+
+    mov dl,38
+    mov dh,3
+    call gotoxy
+    mov al,0dbh
+    call writechar
+    mov edx,OFFSET prompt0       ;Printing the message[empty space]
+    call writestring
+    call writechar
+    call crlf
+
+    mov eax,4fh
+    call SetTextColor           ;changing background color to red
+
+    mov dl,38
+    mov dh,6
+    call gotoxy
+    mov al,0dbh
+    call writechar
+    mov edx,OFFSET prompt3
+    call writestring
+    call writechar
+    call crlf
+
+    mov dl,44
+    mov dh,9
+    call gotoxy
+    mov edx,OFFSET prompt4
+    call writestring
+
+    mov edx,OFFSET UserName
+    mov ecx,BUFFER
+    call readstring
+    mov NameLength,eax
+    cmp eax,0
+    jg PROCEED
+
+
+    call printSTART
+
+    PROCEED:
+
+    mov eax,0fh             ;reseting the bg color
+    call settextcolor
+    ret
+printSTART  endp
+;--------------------------------------
+
+
+;--------GAME OVER USER INTERFACE------
+ENDUI PROC
+    call clrscr
+    mov eax,4fh
+    call settextcolor
+
+    mov dl,40
+    mov dh,2
+    call gotoxy
+    mov al,0dbh
+    call writechar
+    mov edx,OFFSET msg1
+    call writestring
+    call writechar
+
+    mov dl,40
+    mov dh,3
+    call gotoxy
+    mov al,0dbh
+    call writechar
+    mov edx,OFFSET msg2
+    call writestring
+    call writechar
+
+    mov dl,40
+    mov dh,4
+    call gotoxy
+    mov al,0dbh
+    call writechar
+    mov edx,OFFSET msg1
+    call writestring
+    call writechar
+
+    mov eax,4fh
+    call settextcolor
+    mov dl,40
+    mov dh,6
+    call gotoxy
+    mov edx,OFFSET msg3
+    call writestring
+    mov edx,OFFSET UserName
+    call writestring
+    call crlf
+
+    mov dl,40
+    mov dh,7
+    call gotoxy
+    mov edx,OFFSET msg4
+    call writestring
+    mov edx,OFFSET SCORE
+    call writestring
+
+    mov dl,44
+    mov dh,10
+    call gotoxy
+    call waitmsg
+
+    call StoreInFile
+
+    mov eax,0fh
+    call settextcolor
+    call crlf
+    ret
+ENDUI ENDP
+;------------------------------------------------
+
+;-------------STOREINFILE PROCEDURE---------------
+StoreInFile PROC
+    mov edx,OFFSET fileName
+
+    INVOKE CreateFile, OFFSET fileName, GENERIC_WRITE, 0, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL
+    mov handler, eax
+    INVOKE SetFilePointer, handler, 0, 0, FILE_END
+
+    mov eax, handler
+    mov edx, offset newline
+    mov ecx, 1
+    call writetofile
+
+  
+    mov eax, handler
+    mov edx, offset UserName
+    mov ecx, NameLength
+    call writetofile
+
+    mov eax,handler
+    mov edx,OFFSET emptySpace
+    mov ecx,lengthof emptySpace
+    call writetofile
+
+    mov eax, handler
+    mov edx,OFFSET SCORE
+    mov ecx,lengthof SCORE
+    call writetofile
+
+    call closefile
+    ret
+StoreInFile ENDP
+;---------------------------------------------
+
+;----------------MAIN PROCEDURE---------------
+MAIN PROC
+    call printSTART     
+    call clrscr             ;clr the start game user interface to actual game
+    call Bricks_Maker       ;calls procedure to generate bricks
+
+    call Draw_Slider        ;calls procedure to create slider
+    call Draw_Ball          ;calls procedure to create ball
+
+    mov ecx,-1              ;this will cause loop to run forever, until game is over
+    L1:
+    push ecx
+    call Ball_MOVE          ;calls ball move procedure
+    call delay              ;calls delay [builtin function] to wait for readkey.
+    call ReadKEY            ;simply readchar, but when we will use readchar our game will only run when a key is pressed
+    cmp al,'a'
+    Jz Left
+    cmp al,'d'
+    jz Right
+    Run:
+    mov eax,20
+    pop ecx
+    loop L1
+    Left:
+    call Slider_Move_Left  ;procedure to shift slider to left by 4 position
+    jmp Run
+    Right:
+    call Slider_Move_Right ;procedure to shift slider to right by 4 position
+    jmp Run
+    
+            
+    exit
+MAIN ENDP
+;----------------------------------------------
+END main
